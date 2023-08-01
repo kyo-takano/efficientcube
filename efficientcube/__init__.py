@@ -1,18 +1,20 @@
 """
-This package currently supports inference with trained model only.
-For training, please use the code from notebooks
+EfficientCube Package
+
+This package supports inference with the models trained in the original paper.
+For training, please refer to the notebooks listed at https://github.com/kyo-takano/efficientcube/blob/main/notebooks.
 """
 
 import os
 import torch
 from .environments import load_environment
+from .model import Model, ScalableModel
 from . import search
-# from .model import Model, ScalableModel
 
 class EfficientCube:
     def __init__(
-        self, 
-        env="cube3", 
+        self,
+        env="Rubik's Cube",
         model_path="auto",
         device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
     ):
@@ -32,9 +34,9 @@ class EfficientCube:
         if model_path.lower().strip()=="auto":
             script_dir = os.path.dirname(os.path.abspath(__file__))
             model_path = {
-                "cube3": "./models/cube3/2000000steps_scripted.pth",
-                "puzzle15": "./models/puzzle15/100000steps_scripted.pth",
-                "lightsout7": "./models/lightsout7/10000steps_scripted.pth"
+                "Rubik's Cube": "./models/cube3.pth",
+                "15 Puzzle": "./models/puzzle15.pth",
+                "Lights Out": "./models/lightsout7.pth"
             }[env]
             model_path = os.path.normpath(os.path.join(script_dir, model_path))
         assert os.path.exists(model_path), f"Model file not found at `{model_path}`"
@@ -64,4 +66,3 @@ class EfficientCube:
     
     def apply_moves_to_env(self, moves):
         self.env.apply_scramble(moves)
-    

@@ -1,3 +1,12 @@
+"""
+This module contains class implementations for three environments:
+- Rubik's Cube: Cube3
+- 15 Puzzle: Puzzle15
+- Lights Out: LightsOut7
+
+Please note that we prioritize readability and reproducibility over speed optimization in this repository.
+"""
+
 import random
 import numpy as np
 
@@ -37,7 +46,7 @@ class Cube3:
             "U": "D",
             "D": "U",
         }
-        # prohibit obviously reduntant moves. 
+        # prohibit obviously reduntant moves.
         if self.metric == "HTM":
             # two subsequent moves on the same face (cancelling or redundant).
             self.moves_available_after = {
@@ -206,7 +215,7 @@ class Puzzle15:
         }
         self.moves_subsequent = {
             m:[v for v in self.moves if v!=self.pairing[m]] for m in self.moves
-        } 
+        }
         # vectorize the sticker group replacement operations
         self.__vectorize_moves()
 
@@ -380,23 +389,24 @@ class LightsOut7:
 
 def load_environment(name: str, verbose=False):
     # Unify notation
-    name = ''.join(name.split()).lower().strip()
+    name = name.strip()
+    name_unified = ''.join(name.lower().split())
     # Find the corresponding problem
-    if name in ["cube3", "cube3x3", "cube3x3x3", "3x3cube", "3x3x3cube", "rubik's cube"]:
+    if name_unified in ["rubik'scube", "rubixcube", "cube3", "cube3x3", "cube3x3x3"]:
         return Cube3()
-    elif name in ["puzzle15", "15puzzle"]:
+    elif name_unified in ["15puzzle", "puzzle15"]:
         return Puzzle15()
-    elif name in ["lightsout", "lightsout7", "lightsout7x7", "7x7lightsout"]:
+    elif name_unified in ["lightsout", "lightsout7", "lightsout7x7", "7x7lightsout"]:
         return LightsOut7()
     else:
-        # No correspondence. 
+        # No correspondence.
         # Find & suggest the lexically nearest option
         # Code retrieved & modified from https://gist.github.com/kyo-takano/fa2b42fb4df20e2566c29c31f20f87ed
         import gzip
         query = name
         Q = gzip.compress(query.encode())
         distance_from_Q = {}
-        for chunk in ["cube3", "puzzle15", "lightsout7"]:
+        for chunk in ["Rubik's Cube", "15 Puzzle", "Lights Out"]:
             C = gzip.compress(chunk.encode())
             query_chunk = query + " " + chunk
             Q_C = gzip.compress(query_chunk.encode())
@@ -406,3 +416,9 @@ def load_environment(name: str, verbose=False):
         if verbose:
             print(f"Distance: {distance_from_Q[nearest]}")
         raise ValueError(f'Invalid environment name. Did you mean: "{nearest}"?')
+
+if __name__=="__main__":
+    env = Cube3()
+    print(f"Goal:\n{env.state.reshape(6,9)}")
+    env.apply_scramble("R R F U' B F D L D R'")
+    print(f"Scrambled:\n{env.state.reshape(6,9)}")
