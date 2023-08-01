@@ -1,11 +1,22 @@
+"""
+This module provides a beam search algorithm for finding a solution path in a given environment.
+The `beam_search` function in this file is designed for readability and reproducibility, and it may not be the most speed-optimized implementation.
+"""
 
 import time
 import numpy as np
 from copy import deepcopy
-from scipy.special import softmax
-
 import torch
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+def softmax(x, axis=None):
+    """
+    Calculate the softmax function along the given axis.
+    Code borrowed & slightly modified from:
+        https://github.com/scipy/scipy/blob/v1.9.3/scipy/special/_logsumexp.py
+    """
+    x_max = np.amax(x, axis=axis, keepdims=True)
+    exp_x_shifted = np.exp(x - x_max)
+    return exp_x_shifted / np.sum(exp_x_shifted, axis=axis, keepdims=True)
 
 def beam_search(
         env,
@@ -13,9 +24,10 @@ def beam_search(
         beam_width=1024,
         max_depth=1024, # Any arbitrary number above God's number will do
         skip_redundant_moves=True,
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     ):
     """
-    Conducts a best-first search algorithm to find a solution path for a given environment.
+    Conducts a beam search to find a solution path based on a cumulative product of estimated probabilities.
 
     Args:
         env (object): A scrambled instance of the given environment.
