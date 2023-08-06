@@ -14,30 +14,23 @@ class Cube3:
     """
     A class for 3x3x3 Rubik's Cube
     """
-    def __init__(self, metric="QTM"):
+    def __init__(self):
         self.DTYPE = np.int64
-        self.metric = metric
 
-        # define state and goal
-        self.reset()  # state
+        # Define initial and goal state
+        self.reset()
         self.goal = np.arange(0, 9 * 6, dtype=self.DTYPE) // 9
 
-        # define moves
+        # Define moves
         ## faces and turns
         faces = ["U", "D", "L", "R", "B", "F"]
         ## [90 degrees clockwise, 90 degrees counter-clockwise]
         degrees = ["", "'"]
         degrees_inference = degrees[::-1]
-        if self.metric == "HTM":
-            # += [180 degrees]
-            degrees += ["2"]
-            degrees_inference += ["2"]
-        else:
-            assert self.metric == "QTM"
         self.moves = [f"{f}{n}" for f in faces for n in degrees]
         self.moves_inference = [f"{f}{n}" for f in faces for n in degrees_inference]
 
-        # opposite faces
+        # Opposite faces
         self.pairing = {
             "R": "L",
             "L": "R",
@@ -46,36 +39,49 @@ class Cube3:
             "U": "D",
             "D": "U",
         }
-        # prohibit obviously reduntant moves.
-        if self.metric == "HTM":
-            # two subsequent moves on the same face (cancelling or redundant).
-            self.moves_available_after = {
-                m: [v for v in self.moves if v[0] != m[0]] for m in self.moves
-            }
-        elif self.metric == "QTM":
-            # self-cancelling moves on the same face
-            self.moves_available_after = {
-                m: [v for v in self.moves if v[0] != m[0]] + [m] for m in self.moves
-            }
-        else:
-            raise
+        # Prohibit obviously redundant moves.
+        self.moves_available_after = {
+            m: [v for v in self.moves if v[0] != m[0]] + [m] 
+            for m in self.moves
+        } # self-cancelling moves on the same face
 
-        # vectorize the sticker group replacement operations
+        # [OPTIMIZATION] slicing by move string (e.g., R', U, F) => indices (e.g., 2, 6, 1)
+        self.moves_ix = [self.moves.index(m) for m in self.moves]
+        self.moves_ix_available_after = {
+            self.moves.index(m): [self.moves.index(m) for m in available_moves]
+            for m, available_moves in self.moves_available_after.items()
+        }
+        self.moves_ix_inference = [self.moves.index(m) for m in self.moves_inference]
+        self.pairing_ix = {
+            0: 1,
+            1: 0,
+            2: 3,
+            3: 2,
+            4: 5,
+            5: 4,
+        } # Points to the opposite face index
+
+        # Vectorize the sticker group replacement operations
         self.__vectorize_moves()
 
     def reset(self):
+        """Resets the cube state to the solved state."""
         self.state = np.arange(0, 9 * 6, dtype=self.DTYPE) // 9
 
     def is_solved(self):
+        """Checks if the cube is in the solved state."""
         return np.all(self.state == self.goal)
 
-    def state_to_batch(self):
-        return np.expand_dims(self.state, axis=0)
-
     def finger(self, move):
+        """Applies a single move on the cube state using move string."""
         self.state[self.sticker_target[move]] = self.state[self.sticker_source[move]]
 
+    def finger_ix(self, ix):
+        """The same `finger` method **but using indices of moves for faster execution"""
+        self.state[self.sticker_target_ix[ix]] = self.state[self.sticker_source_ix[ix]]
+
     def apply_scramble(self, scramble):
+        """Applies a sequence of moves (scramble) to the cube state."""
         if isinstance(scramble, str):
             scramble = scramble.split()
         for m in scramble:
@@ -87,71 +93,77 @@ class Cube3:
 
     def scrambler(self, scramble_length):
         """
-        A generator function yielding the state and scramble
+        Generates a random scramble of given length and returns the cube state and scramble moves as a generator.
+        Please note that index-based implementations (faster) follow commented lexical logics.
         """
         while True:
-            # reset the self.state, scramble, and retun self.state and scramble moves
+            # Reset the cube state, scramble, and return cube state and scramble moves
             self.reset()
             scramble = []
 
             for i in range(scramble_length):
                 if i:
                     last_move = scramble[-1]
-                    if i > 1:  # N(>=3)th moves
+                    if i > 1:   # [3rd~ moves]
                         while True:
-                            move = random.choice(self.moves_available_after[last_move])
-                            if self.metric == "QTM":
-                                if scramble[-2] == last_move == move:
-                                    # Two mutually canceling moves in a row
-                                    continue
-                                elif (
-                                    scramble[-2][0] == move[0]
-                                    and len(scramble[-2] + move) == 3
-                                    and last_move[0] == self.pairing[move[0]]
-                                ):
-                                    # Two mutually canceling moves sandwiching an opposite face move
-                                    continue
-                                else:
-                                    break
-                            elif self.metric == "HTM":
-                                if scramble[-2][0] == move[0] and last_move[0] == self.pairing[move[0]]:
-                                    # Two mutually canceling moves sandwiching an opposite face move
-                                    continue
-                                else:
-                                    break
-                            else:
-                                raise
-                    else:  # 2nd move
-                        move = random.choice(self.moves_available_after[last_move])
-                else:  # 1st move
-                    move = random.choice(self.moves)
+                            # move = random.choice(self.moves_available_after[last_move])
+                            move = random.choice(self.moves_ix_available_after[last_move])
 
-                self.finger(move)
+                            if scramble[-2] == last_move == move:
+                                # Three subsequent moves on the same face, which could be one
+                                continue
+                            # elif (
+                            #     scramble[-2][0] == move[0] and len(scramble[-2] + move) == 3
+                            #     and last_move[0] == self.pairing[move[0]]
+                            # ):
+                            elif (
+                                scramble[-2]//2 == move//2 and scramble[-2]%2 != move%2
+                                and last_move//2 == self.pairing_ix[move//2]
+                            ):
+                                # Two mutually canceling moves sandwiching an opposite face move
+                                continue
+                            else:
+                                break
+                    else:       # [2nd move]
+                        # move = random.choice(self.moves_available_after[last_move])
+                        move = random.choice(self.moves_ix_available_after[last_move])
+                else:           # [1st move]
+                    # move = random.choice(self.moves)
+                    move = random.choice(self.moves_ix)
+
+                # self.finger(move)
+                self.finger_ix(move)
                 scramble.append(move)
 
-                yield self.state, self.moves.index(move)
+                yield self.state, move
+
 
     def __vectorize_moves(self):
         """
+        Vectorizes the sticker group replacement operations for faster computation.
         This method defines ```self.sticker_target``` and ```self.sticker_source``` to manage sticker colors (target is replaced by source).
         They define indices of target and source stickers so that the moves can be vectorized.
 
-        colors:
-                0 0 0
-                0 0 0
-                0 0 0
-        2 2 2   5 5 5   3 3 3   4 4 4
-        2 2 2   5 5 5   3 3 3   4 4 4
-        2 2 2   5 5 5   3 3 3   4 4 4
-                1 1 1
-                1 1 1
-                1 1 1
-        order of stickers on each face:
-             2  5  8
-             1  4  7
-            [0] 3  6
+        Colors:
 
-        indices of state (each starting with 9*(n-1)):
+                0 0 0
+                0 0 0
+                0 0 0
+        2 2 2   5 5 5   3 3 3   4 4 4
+        2 2 2   5 5 5   3 3 3   4 4 4
+        2 2 2   5 5 5   3 3 3   4 4 4
+                1 1 1
+                1 1 1
+                1 1 1
+
+        Order of stickers on each face:
+
+             2   5   8
+             1   4   7
+            [0]  3   6
+
+        Indices of state (each starting with 9*(n-1)):
+
                          2   5   8
                          1   4   7
                         [0]  3   6
@@ -195,6 +207,10 @@ class Cube3:
             for i, idx in enumerate(self.sticker_target[m]):
                 assert self.sticker_replacement[m][idx] == self.sticker_source[m][i]
 
+        # For index slicing
+        self.sticker_target_ix = np.array([np.array(self.sticker_target[m]) for m in self.moves])
+        self.sticker_source_ix = np.array([np.array(self.sticker_source[m]) for m in self.moves])
+
 class Puzzle15:
     def __init__(self):
         self.DTYPE = np.int64
@@ -213,9 +229,24 @@ class Puzzle15:
             'U':'D',
             'D':'U',
         }
-        self.moves_subsequent = {
+        self.moves_available_after = {
             m:[v for v in self.moves if v!=self.pairing[m]] for m in self.moves
         }
+
+        # [OPTIMIZATION] slicing by move string => indices
+        self.moves_ix = [self.moves.index(m) for m in self.moves]
+        self.moves_ix_available_after = {
+            self.moves.index(m): [self.moves.index(m) for m in available_moves]
+            for m, available_moves in self.moves_available_after.items()
+        }
+        self.moves_ix_inference = [self.moves.index(m) for m in self.moves_inference]
+        self.pairing_ix = {
+            0:1,
+            1:0,
+            2:3,
+            3:2
+        }
+
         # vectorize the sticker group replacement operations
         self.__vectorize_moves()
 
@@ -225,18 +256,17 @@ class Puzzle15:
     def is_solved(self):
         return np.all(self.state == self.goal)
 
-    def state_to_batch(self):
-        return np.expand_dims(self.state, axis=0)
+    def finger(self, move):
+        if isinstance(move, str):
+            move = self.moves.index(move)
+        self.finger_ix(move)
 
-    def finger(self, action):
-        if isinstance(action, str):
-            # action = self.moves.index(self.pairing[action])
-            action = self.moves.index(action)
-        # target: empty slot
+    def finger_ix(self, move):
+        # [target] empty slot
         target_index = np.squeeze(np.where(self.state == 0))
-        # source: to be the empty slot
-        source_index = self.swap_zeros[target_index, action]
-        # swap.
+        # [source] to-be empty slot
+        source_index = self.swap_zeros[target_index, move] # `self.swap_zeros`: defined in `__vectorize_moves`
+        # Swap.
         self.state[target_index], self.state[source_index] = self.state[source_index], 0
 
     def apply_scramble(self, scramble):
@@ -256,10 +286,10 @@ class Puzzle15:
             for i in range(scramble_length):
                 target_loc = np.where(self.state.reshape(4, 4) == 0)
                 for _ in iter(int,1):
-                    if scramble:
-                        move = random.choice(self.moves_subsequent[scramble[-1]])
-                    else:
-                        move = random.choice(self.moves)
+                    if scramble:    # [2nd~ move]
+                        move = random.choice(self.moves_ix_available_after[scramble[-1]])
+                    else:           # [1st move]
+                        move = random.choice(self.moves_ix)
                     """
                     index_map:
                         [ 0  1  2  3]
@@ -267,32 +297,33 @@ class Puzzle15:
                         [ 8  9 10 11]
                         [12 13 14 15]
                     """
-                    # remove ineffective moves
-                    if move=="R":
-                        # if target_loc[1]!=0:
+                    # Skip ineffective moves
+                    if move==3: # if move=="R"
                         if target_loc[1]:
                             # zero_index NOT on the left
                             break
-                    elif move=="D":
-                        # if target_loc[0]!+0:
+                    elif move==1: # if move=="D"
                         if target_loc[0]:
                             # zero_index NOT be at the top
                             break
-                    elif move=="U":
+                    elif move==0: # if move=="U"
                         if target_loc[0]!=4-1:
                             # zero_index NOT on the left
                             break
-                    elif move=="L":
+                    elif move==2: # if move=="L"
                         if target_loc[1]!=4-1:
                             # zero_index NOT on the left
                             break
+                    else:
+                        raise ValueError("Unexpected move index.")
 
-                self.finger(move)
+                self.finger_ix(move)
                 scramble.append(move)
-                yield self.state, self.moves.index(move)
+                yield self.state, move
 
     def __vectorize_moves(self):
-        # largely the same (copy-pasted & edited) as in https://github.com/forestagostinelli/DeepCubeA/blob/master/environments/n_puzzle.py#L174
+        # Code retrieved & modified from:
+        # https://github.com/forestagostinelli/DeepCubeA/blob/f75918a5fb83c140b649ee634f765d42845b17a3/environments/n_puzzle.py#L174
         self.swap_zeros = np.zeros((4*4, len(self.moves)), dtype=self.DTYPE)
         for move_ix, move in enumerate(self.moves):
             for i in range(4):
@@ -337,9 +368,12 @@ class LightsOut7:
         # define state and goal
         self.dim = dim
         self.num_tiles = self.dim ** 2
-        self.moves_inference = list(range(self.num_tiles))
+        self.moves = list(range(self.num_tiles))
+        self.moves_inference = self.moves
         self.reset()
 
+        # To be consistent with the other environments:
+        self.moves_ix_inference = self.moves_inference
         # vectorize the sticker group replacement operations
         self.__vectorize_moves()
 
@@ -349,15 +383,20 @@ class LightsOut7:
     def is_solved(self):
         return np.all(self.state == 0)
 
-    def state_to_batch(self):
-        return np.expand_dims(self.state, axis=0)
-
     def finger(self, move):
         self.state[self.move_matrix[move]] = (self.state[self.move_matrix[move]] + 1) % 2 # Take modulo of odd/even to simulate boolean
+
+    def finger_ix(self, move):
+        self.finger(move)
 
     def apply_scramble(self, scramble):
         if isinstance(scramble, str):
             scramble = scramble.split()
+        try:
+            scramble = [int(m) for m in scramble]
+        except:
+            raise TypeError('Scramble sequence to **Lights Out** must be either a list of integers or a *space-delimited* list of integers')
+
         for m in scramble:
             self.finger(m)
 
