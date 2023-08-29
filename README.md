@@ -11,6 +11,9 @@ K. Takano. Self-Supervision is All You Need for Solving Rubik's Cube. _Transacti
 > **Abstract:**\
 > Existing combinatorial search methods are often complex and require some level of expertise. This work introduces a simple and efficient deep learning method for solving combinatorial problems with a predefined goal, represented by Rubik's Cube. We demonstrate that, for such problems, training a deep neural network on random scrambles branching from the goal state is sufficient to achieve near-optimal solutions. When tested on Rubik's Cube, 15 Puzzle, and 7×7 Lights Out, our method outperformed the previous state-of-the-art method DeepCubeA, improving the trade-off between solution optimality and computational cost, despite significantly less training data. Furthermore, we investigate the scaling law of our Rubik's Cube solver with respect to model size and training data volume.
 
+📢
+_The compute-optimal models trained using Half-Turn Metric (Section 7:  Scaling Law) are available in [**AlphaCube**](https://github.com/kyo-takano/alphacube), a dedicated Rubik's Cube solver based on this study._
+
 ## Code
 
 ### Jupyter Notebooks
